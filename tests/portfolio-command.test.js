@@ -38,8 +38,9 @@ describe('portfolio 交易流水', () => {
   it('买入/卖出写 ledger；清仓后 history 仍可查', async () => {
     const cache = new KlineCache(cacheFile);
     const ctx = ctxFor(cache);
-    await quiet(() => cmdPortfolio(ctx, ['add', '600519', '--qty', '100', '--price', '100', '--stop', '90', '--name', '贵州茅台']));
-    await quiet(() => cmdPortfolio(ctx, ['sell', '600519', '--qty', '100', '--price', '110', '--name', '贵州茅台']));
+    // T+1：A 股当日买入不能当日卖出，测试用跨日日期
+    await quiet(() => cmdPortfolio(ctx, ['add', '600519', '--qty', '100', '--price', '100', '--stop', '90', '--name', '贵州茅台', '--date', '2026-08-03']));
+    await quiet(() => cmdPortfolio(ctx, ['sell', '600519', '--qty', '100', '--price', '110', '--name', '贵州茅台', '--date', '2026-08-06']));
 
     expect(cache.positionsList()).toHaveLength(0);
     expect(cache.countTrades()).toBe(2);

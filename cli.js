@@ -197,13 +197,19 @@ function printHelp() {
   ths lhb [--top N] [--json]                    龙虎榜（营业部席位/机构游资）
   ths fundamental <code> [--json]               F10 财务概况（毛利率/ROE/增速/负债率）
   ths portfolio add|sell|list|risk|history|remove|clear
-       add <code> --qty N --price X [--name X] [--fee X] [--note X]
-       sell <code> --qty N --price X [--fee X]
+       add <code> --qty N --price X [--name X] [--fee X] [--note X] [--capital N]
+       sell <code> --qty N --price X [--fee X] [--date YYYY-MM-DD]
        list [--capital N] [--risk] [--json]
-       risk <code> [--stop X] [--target X] [--json]   # 止损/目标/盈亏比
-                                                 持仓台账（记录买卖→盈亏/止损/复盘）
-  ths daily run [--codes a,b] [--refresh] [--min-n N] [--since N] [--candidates a,b,c] [--json]
-                                                 每日监控+快照+复盘+池建议（学习回路）
+       risk <code> [--stop X] [--target X] [--capital N] [--json]
+                                                 持仓台账（买卖→盈亏/止损/复盘）
+                                                 整手/当日买入不可卖(T+1)硬校验；未给 --fee 时按
+                                                 佣金万2.5(最低5)+过户费+印花税估算入账；
+                                                 有账户资金时提示单票>20%、单笔风险>2%
+  ths daily run [--codes a,b] [--refresh] [--min-n N] [--since N] [--candidates a,b,c]
+       [--auto] [--force] [--source auto|bridge|direct] [--json]
+                                                 每日监控+快照+复盘+池建议+仓位系数（学习回路）
+                                                 --auto 收盘后一键收工：安全池建议自动落自选+持仓动作清单
+                                                 --force 盘中强行生成（默认 15:05 前拒绝，防半根K线污染）
   ths daily review [--since N] [--code X] [--min-n N] [--json]   复盘命中率统计（纯本地）
   ths daily lessons [--json]                      经验教训 + 待确认池建议
   ths daily lesson-add "复盘文字" [--category X] [--code X]       手动记一条经验
@@ -211,6 +217,8 @@ function printHelp() {
   ths daily snapshot [--date YYYY-MM-DD] [--code X] [--json]     查看历史快照
   ths daily apply <Sid> [--yes]                   执行池建议（剔除/加入/减仓）
                                                  每日复盘闭环：分析落盘→3/5日回填命中→经验积累
+  ths brief [--json] [--source auto|bridge|direct]
+                                                 单屏晨报/晚报：大盘→仓位系数→持仓→自选异动→今日规则
   ths report daily|review|backtest|risk|portfolio [选项]
        [--format md|html|json] [--out FILE]      静态研究报告（快照/回测/风控/持仓）
                                                  详细用法: ths report --help
@@ -326,6 +334,11 @@ async function main() {
     else await dispatch(cmd, args.slice(1));
     audit.close();
   } catch (e) {
+    // M7-0-7: 命令抛错时把当前操作按 error 收尾（此前只 audit.close()，
+    // 失败操作在审计里既没有结束状态也没有 error 字段，失败等于没发生）
+    try {
+      if (audit.endOperation) audit.endOperation('error', {}, null, e);
+    } catch (e2) { /* 审计收尾失败不能盖住原始错误 */ }
     audit.close();
     const msg = e.message || String(e);
     // 友好错误提示

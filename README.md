@@ -59,7 +59,7 @@ node cli.js kline 600519 --period day --count 20
 
 ```
 ths search <keyword> [--json]   搜索股票(代码/名称/拼音)
-ths quote <code> [--market N] [--json]     实时行情快照(含换手/量比/PE/市值/涨跌停)
+ths quote <code> [--market N] [--source auto|bridge|direct] [--json]     实时行情快照(含换手/量比/PE/市值/涨跌停)
 ths quotes [--pool watchlist|--codes a,b] [--json]   批量行情(一次多只)
 ths kline <code> [--period day|week|month|quarter|60min|120min]
        [--count N] [--adjust forward|backward|none] [--market N]
@@ -90,14 +90,19 @@ ths rank [--kind zdfph|cxg|cxd|lxsz|lxxd|cxfl|cxsl|xstp|xxtp|ljqs|ljqd] [--top N
 ths lhb [--top N] [--json]   龙虎榜(营业部席位)   [Node 直连]
 ths fundamental <code> [--json]   F10 财务概况   [Node 直连]
 ths portfolio add|sell|list|risk|history|remove|clear <code> [--qty N] [--price X] [--stop X] [--capital N] [--risk] [--json]   持仓台账(建仓固化止损)   [本地]
-ths portfolio risk <code> [--stop X --save]   固化止损/目标/盈亏比(--save 上移止损)   [本地+行情]
-ths daily run [--codes a,b] [--refresh] [--min-n N] [--since N] [--candidates a,b,c] [--json]
-      每日监控+快照+复盘+池建议(学习回路)+方向环境(板块/资金/龙虎榜)+信号分级+破位追踪   [本地+行情]
+ths portfolio risk <code> [--stop X --save] [--capital N]   固化止损/目标/盈亏比/仓位占比/单笔风险   [本地+行情]
+ths daily run [--codes a,b] [--refresh] [--min-n N] [--since N] [--candidates a,b,c]
+       [--auto] [--force] [--source auto|bridge|direct] [--json]
+      每日监控+快照+复盘+池建议(学习回路)+方向环境+信号分级+破位追踪+仓位系数
+      --auto 收盘后一键收工(安全池建议自动落自选+持仓动作清单)；--force 盘中强行生成(默认 15:05 前拒绝)
+      daily replay <code|--codes|--all> [--count 250] [--step 3] [--lookback 60]   历史回放补学习样本
+      daily rules / lessons  自动规则(由交叉统计生成,同 key 每日刷新)
 ths daily review [--since N] [--code X] [--min-n N] [--json]   复盘命中率统计   [本地]
 ths daily lessons [--json]    经验教训+待确认池建议   [本地]
 ths daily lesson-add "复盘文字" [--category X] [--code X]    手动记一条经验   [本地]
 ths daily snapshot [--date D] [--code X] [--json]   查看历史快照   [本地]
 ths daily apply <Sid> [--yes]   执行池建议(剔除/加入/减仓)   [本地]
+ths brief [--json] [--source auto|bridge|direct]   一屏晨报/晚报:大盘→仓位系数→持仓→自选异动→今日规则   [本地+行情]
 ths report daily|review [--since N] [--min-n N] [--date D]
        [--format md|html|json] [--out FILE]   静态研究报告(本地快照,不联网)
 ths report backtest <code> --strategy ma-cross|rsi|macd|score|resonance|buy-hold
@@ -287,11 +292,15 @@ K 线数据缓存于 `data/cache/ths.json`(gitignore),避免重复打同花顺�
 支撑是否守住、是否触压力),按特征桶累计命中率,并给出池建议(剔除/减仓/加入)。经验与建议存
 `data/daily/lessons.json`,可长期复用。
 
-- 复盘窗口按「快照序列定位」,无交易日历依赖;缺跑的日子自动顺延,周末同日重跑幂等
-- 命中率桶:信号/评分/均线/市场情绪(MACD/KDJ/RSI/ADX/ATR/形态/共振),`n≥--min-n`(默认5)才显示
+- 复盘窗口按「交易日」定位(用前复权日K对齐 i+3/i+5),无 K 线时回退快照序列并标 `windowMode:'snapshots'`
+- 命中率门槛用**方向样本** `nDir ≥ --min-n`(默认5),观望样本不计入分母——避免「1 条方向 + 4 条观望」显示 100%
+- 冷启动:`daily replay <code>` 用历史日K逐根生成无前视样本;实盘方向样本不足时 `daily review` 自动改用回放样本并标注
+- 命中率桶:信号/评分/均线/市场情绪/环境×信号交叉表(MACD/KDJ/RSI/ADX/ATR/形态/共振),`nDir≥--min-n` 才显示
+- 自动规则:由交叉与特征桶生成「当[特征]→有效/无效,3日命中 XX%(n=N)」,写 lessons(category=规则)
 - 池建议只出建议不执行,`ths daily apply <Sid> --yes` 确认后才改自选池
 - `review / lessons / snapshot / apply` 纯本地离线可用;`run` 各网络步失败打 ⚠ 不中断
-- 每日一键:`npm run daily`(scripts/daily.sh 已改为跑 `ths daily run` + `review`)
+- 每日一键:`npm run daily`(scripts/daily.sh 已改为跑 `ths daily run` + `review`);收盘后也可 `ths daily run --auto`
+- 铁律在命令层执行:整手/当日买入不可卖(T+1)硬校验、费用按佣金万2.5(最低5)+过户费万0.1+卖出印花万5估算入账、单票>20% 与单笔风险>2% 提示;大盘环境→仓位系数(普跌0.5/分化0.8/普涨1.0,指数全破MA20 再降一档)
 
 ## 架构
 

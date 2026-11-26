@@ -173,13 +173,27 @@ describe('computeStats 命中率统计', () => {
       S('2026-08-06', { close: 20, signal: '看多' }),
       S('2026-08-07', { close: 30, signal: '看多' }),
     ];
-    const st = computeStats(snaps, { minN: 2 });
+    const st = computeStats(snaps, { minN: 1 });
     const o = st.overall;
     expect(o.n3).toBe(2);
     expect(o.nDir3).toBe(1); // 只有一条看多参与命中率
     expect(o.hits3).toBe(1);
     expect(o.hitRate3).toBe(1);
     expect(o.avgRet3).toBeCloseTo((1.0 + 0.5) / 2, 4); // 两条 avg
+  });
+
+  it('命中率门槛按方向样本：1 条方向 + 4 条观望不给命中率', () => {
+    const snaps = [
+      S('2026-08-03', { close: 10, signal: '看多' }),
+      S('2026-08-04', { close: 11, signal: '观望' }),
+      S('2026-08-05', { close: 12, signal: '观望' }),
+      S('2026-08-06', { close: 13, signal: '观望' }),
+      S('2026-08-07', { close: 14, signal: '观望' }),
+    ];
+    const o = computeStats(snaps, { minN: 5 }).overall;
+    expect(o.n3).toBe(2);      // 两条窗口闭合（一条看多 + 一条观望）
+    expect(o.nDir3).toBe(1);
+    expect(o.hitRate3).toBeNull();
   });
 
   it('特征桶（marketMood / signal / scoreBand）', () => {
